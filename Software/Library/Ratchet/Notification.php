@@ -1,5 +1,7 @@
 <?php
 namespace Grepodata\Library\Ratchet;
+use Grepodata\Library\Logger\Pushbullet;
+use Grepodata\Library\Redis\RedisClient;
 use Ratchet\MessageComponentInterface;
 use Ratchet\ConnectionInterface;
 
@@ -14,8 +16,7 @@ class Notification implements MessageComponentInterface {
 
       echo "finished setup\n";
     } catch (\Exception $e) {
-      // TODO: we probably need a non-blocking logger tool (how to push alert to pushbullet?)
-//      Logger::error("CRITICAL: WebSocket startup failure: ".$e->getMessage() . " [".$e->getTraceAsString()."]");
+      Pushbullet::SendPushMessage("CRITICAL: WebSocket startup failure: ".$e->getMessage() . " [".$e->getTraceAsString()."]");
     }
   }
 
@@ -28,50 +29,43 @@ class Notification implements MessageComponentInterface {
     // Store the new connection to send messages to later
     $this->clients->attach($conn);
 
-    echo "New connection! ({$conn->resourceId})\n";
+    echo "New connection ({$conn->resourceId})\n";
   }
 
-  public function onMessage(ConnectionInterface $from, $msg) {
-    // In this application if clients send data it's because the user hacked around in console
-
+  public function onMessage(ConnectionInterface $conn, $msg) {
     try {
       $aData = json_decode($msg, true);
       if (key_exists('websocket_token', $aData)) {
+        echo "Attempting client authentication ({$conn->resourceId})\n";
 
-        // TODO: this should all be done using async code...
+        RedisClient::get($aData['websocket_token'], function ($payload) use ($conn) {
+          if (empty($payload)) {
+            // Unable to find wst
+            echo "Auth error: unknown wst ({$conn->resourceId})\n";
+            $conn->close();
+          }
 
-//        // Check token
-//        try {
-//          $oToken = ScriptToken::GetScriptToken($aData['websocket_token']);
-//        } catch (ModelNotFoundException $e) {
-//          ResponseCode::errorCode(3041, array(), 401);
-//        }
-//
-//        // Check expiration
-//        $Limit = Carbon::now()->subDays(7);
-//        if ($oToken->created_at < $Limit) {
-//          // token expired
-//          ResponseCode::errorCode(3042, array(), 401);
-//        }
-//
-//        // Check client
-//        if ($oToken->client !== $_SERVER['REMOTE_ADDR']) {
-//          // Invalid client
-//          Logger::warning("Remote mismatch during script token verification: ".$oToken->client.' != '.$_SERVER['REMOTE_ADDR']);
-//          ResponseCode::errorCode(3043, array(), 401);
-//        }
+          $aPayload = json_decode($payload, true);
 
-        // TODO: get teams for user
-        // TODO: subscribe user connection to respective team topics
+          if ($conn->remoteAddress != $aPayload['client']) {
+            // Client mismatch, close connection
+            echo "Auth error: illegal client {$conn->remoteAddress} != {$aPayload['client']} ({$conn->resourceId})\n";
+            $conn->close();
+          }
 
-        return;
+          // Auth was successful, add user info to connection
+          $conn->user_id = $aPayload['user_id'];
+          $conn->teams = $aPayload['teams'];
+          echo "Successful authentication ({$conn->resourceId})\n";
+        });
+
       }
     } catch (\Exception $e) {
       echo "Error authenticating client: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']';
     }
 
     // Invalid message, close connection
-    $from->close();
+    //$conn->close();
   }
 
   public function onClose(ConnectionInterface $conn) {

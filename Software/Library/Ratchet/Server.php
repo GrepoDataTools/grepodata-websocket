@@ -4,23 +4,23 @@
 namespace Grepodata\Library\Ratchet;
 
 
-use Clue\React\Redis\Factory;
+use Grepodata\Library\Redis\RedisClient;
 use Ratchet\Http\HttpServer;
+use Ratchet\Http\OriginCheck;
 use Ratchet\Server\IoServer;
 use Ratchet\WebSocket\WsServer;
+use React\EventLoop\LoopInterface;
 use React\Socket\SocketServer;
 
 class Server
 {
-  public static function setup($loop)
+  public static function setup(LoopInterface $loop)
   {
+    # Define socket handler
     $notification_service = new Notification;
 
     # Create redis backbone listener (messages from REST API will be transmitted over this channel)
-    $factory = new Factory($loop);
-    $redis = $factory->createLazyClient('localhost:'.REDIS_PORT);
-    $redis->subscribe(REDIS_BACKBONE_CHANNEL);
-    $redis->on('message', array($notification_service, 'onPush'));
+    RedisClient::subscribe($loop, REDIS_BACKBONE_CHANNEL, array($notification_service, 'onPush'));
 
     # Create WebSocket server and set Notification as the event handler
     $webSock = new SocketServer('0.0.0.0:'.WEBSOCKET_PORT, array(), $loop); // Binding to 0.0.0.0 means remotes can connect
