@@ -1,0 +1,19 @@
+{
+  "name": "grepodata/grepodata-websocket",
+  "version": "0.0.1",
+  "authors": [
+    {
+      "name": "GrepoData",
+      "email": "admin@grepodata.com"
+    }
+  ],
+  "require": {
+    "cboden/ratchet": "^0.4.4",
+    "clue/redis-react": "^2.6"
+  },
+  "autoload": {
+    "psr-4": {
+      "Grepodata\\": "Software"
+    }
+  }
+}
