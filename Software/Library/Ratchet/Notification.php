@@ -23,6 +23,23 @@ class Notification implements MessageComponentInterface {
   public function onPush($channel, $payload) {
     // pubsub message received on given $channel
     echo "message received on backbone: ". $payload ."\n";
+
+    $aPayload = json_decode($payload, true);
+
+    if (key_exists('type', $aPayload)) {
+      switch ($aPayload['type']) {
+        case 'notify_team':
+        default:
+          // Send a notification to everybody that is subscribed to the team
+          $team = $aPayload['team'];
+          $msg = $aPayload['msg'];
+          foreach ($this->clients as $client) {
+            if (in_array($team, $client->teams)) {
+              $client->send($msg);
+            }
+          }
+      }
+    }
   }
 
   public function onOpen(ConnectionInterface $conn) {
