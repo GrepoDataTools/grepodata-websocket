@@ -21,24 +21,36 @@ class Notification implements MessageComponentInterface {
   }
 
   public function onPush($channel, $payload) {
-    // pubsub message received on given $channel
-    echo "message received on backbone: ". $payload ."\n";
+    if ($channel === REDIS_BACKBONE_CHANNEL) {
+      // pubsub message received on backbone
+      echo "message received on backbone: " . $payload . "\n";
 
-    $aPayload = json_decode($payload, true);
+      $aPayload = json_decode($payload, true);
 
-    if (key_exists('type', $aPayload)) {
-      switch ($aPayload['type']) {
-        case 'notify_team':
-        default:
-          // Send a notification to everybody that is subscribed to the team
-          $team = $aPayload['team'];
-          $msg = $aPayload['msg'];
-          foreach ($this->clients as $client) {
-            if (in_array($team, $client->teams)) {
-              $client->send($msg);
+      if (key_exists('type', $aPayload)) {
+        switch ($aPayload['type']) {
+          case 'notify_user':
+            // Send a notification to a specific user
+            foreach ($this->clients as $client) {
+              if ($client->user_id == $aPayload['user_id']) {
+                $client->send($aPayload['msg']);
+              }
             }
-          }
+            break;
+          case 'notify_team':
+            // Send a notification to everybody that is subscribed to the team
+            foreach ($this->clients as $client) {
+              if (in_array($aPayload['team'], $client->teams)) {
+                $client->send($aPayload['msg']);
+              }
+            }
+            break;
+          default:
+            echo "Unknown message type received on backbone: {$aPayload['type']}\n";
+        }
       }
+    } else{
+      echo "Message received on illegal channel: ". $channel ."\n";
     }
   }
 
