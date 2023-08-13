@@ -9,7 +9,8 @@
   ],
   "require": {
     "cboden/ratchet": "^0.4.4",
-    "clue/redis-react": "^2.6"
+    "clue/redis-react": "^2.6",
+    "ext-json": "*"
   },
   "autoload": {
     "psr-4": {

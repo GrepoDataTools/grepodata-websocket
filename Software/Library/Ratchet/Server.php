@@ -6,7 +6,6 @@ namespace Grepodata\Library\Ratchet;
 
 use Grepodata\Library\Redis\RedisClient;
 use Ratchet\Http\HttpServer;
-use Ratchet\Http\OriginCheck;
 use Ratchet\Server\IoServer;
 use Ratchet\WebSocket\WsServer;
 use React\EventLoop\LoopInterface;
@@ -17,7 +16,7 @@ class Server
   public static function setup(LoopInterface $loop)
   {
     # Define socket handler
-    $notification_service = new Notification;
+    $notification_service = new Notification($loop);
 
     # Create redis backbone listener (messages from REST API will be transmitted over this channel)
     RedisClient::subscribe($loop, REDIS_BACKBONE_CHANNEL, array($notification_service, 'onPush'));
