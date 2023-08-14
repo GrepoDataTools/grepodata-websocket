@@ -10,10 +10,12 @@ use React\EventLoop\LoopInterface;
 class Notification implements MessageComponentInterface {
   protected $clients;
   protected $startup_time;
+  protected $redis_heartbeat;
 
   public function __construct(LoopInterface $loop) {
     try {
       $this->startup_time = time();
+      $this->redis_heartbeat = time();
 
       $this->clients = new \SplObjectStorage;
 
@@ -28,14 +30,30 @@ class Notification implements MessageComponentInterface {
 
   public function checkStatus() {
     $CurrentTime = date('Y-m-d h:i:s');
-    $Uptime = time() - $this->startup_time;
+    $NowUnix = time();
+    $Uptime = $NowUnix - $this->startup_time;
     $NumConnections = count($this->clients);
-    echo "[{$CurrentTime}] Uptime: {$Uptime}, Connections: {$NumConnections}\n";
+    $TimeSinceHeartbeat = $NowUnix - $this->redis_heartbeat;
+    echo "[{$CurrentTime}] Uptime: {$Uptime}, Connections: {$NumConnections}, Time since heartbeat: {$TimeSinceHeartbeat}\n";
 
-    // TODO: check if Redis PubSub listener is still alive (listener dies if Redis restarts); if not, we need to restart
-    // 1. cronjob sends Redis heartbeat over backbone every 5 minutes
-    // 2. if websocket server has not received a heartbeat for more than 5 minutes, the listener is dead
-    // 3. if listener is dead, restart websocket server gracefully
+    if (!bDevelopmentMode && $TimeSinceHeartbeat > (REDIS_BACKBONE_HEARTBEAT_INTERVAL * 2)+5) {
+      // We missed 2 or more heartbeats; time for a restart!
+      echo "Missed 2+ backbone heartbeats. Restarting..\n";
+      Pushbullet::SendPushMessage("CRITICAL: WebSocket missed 2+ backbone heartbeats. Restarting..");
+      $this->gracefulRestart();
+    }
+  }
+
+  public function gracefulRestart() {
+    // Let all clients know that server is restarting
+    $RestartPayload = json_encode(array(
+      'action' => 'graceful_restart'
+    ));
+    foreach ($this->clients as $client) {
+      $client->send($RestartPayload);
+      $client->close();
+    }
+    die();
   }
 
   public function onPush($channel, $payload) {
@@ -47,11 +65,15 @@ class Notification implements MessageComponentInterface {
 
       if (key_exists('type', $aPayload)) {
         switch ($aPayload['type']) {
+          case 'redis_heartbeat':
+            // Update redis_heartbeat; backbone listener is still alive!
+            $this->redis_heartbeat = time();
+            break;
           case 'notify_user':
             // Send a notification to a specific user
             foreach ($this->clients as $client) {
               if (!empty($client->user_id) && $aPayload['user_id'] === $client->user_id) {
-                $client->send($aPayload['msg']);
+                $client->send($payload);
               }
             }
             break;
@@ -59,7 +81,7 @@ class Notification implements MessageComponentInterface {
             // Send a notification to everybody that is subscribed to the team
             foreach ($this->clients as $client) {
               if (!empty($client->teams) && in_array($aPayload['team'], $client->teams)) {
-                $client->send($aPayload['msg']);
+                $client->send($payload);
               }
             }
             break;
@@ -93,6 +115,7 @@ class Notification implements MessageComponentInterface {
         RedisClient::get($aData['websocket_token'], function ($payload) use ($conn) {
           if (empty($payload)) {
             // Unable to find wst
+            // TODO: let client know auth was unsuccessful and let them retry
             echo "Auth error: unknown wst ({$conn->resourceId})\n";
             $conn->close();
             return;
@@ -102,6 +125,7 @@ class Notification implements MessageComponentInterface {
 
           if ($conn->remoteAddress != $aPayload['client']) {
             // Client mismatch, close connection
+            // TODO: let client know auth was unsuccessful and let them retry
             echo "Auth error: illegal client {$conn->remoteAddress} != {$aPayload['client']} ({$conn->resourceId})\n";
             $conn->close();
             return;
