@@ -9,6 +9,6 @@ use React\EventLoop\Loop;
 
 $loop  = Loop::get();
 
-Server::setup($loop);
+$server = Server::setup($loop);
 
-$loop->run();
+$server->run();
