@@ -37,23 +37,10 @@ class Notification implements MessageComponentInterface {
     echo "[{$CurrentTime}] Uptime: {$Uptime}, Connections: {$NumConnections}, Time since heartbeat: {$TimeSinceHeartbeat}\n";
 
     if (!bDevelopmentMode && $TimeSinceHeartbeat > (REDIS_BACKBONE_HEARTBEAT_INTERVAL * 2)+5) {
-      // We missed 2 or more heartbeats; time for a restart!
       echo "Missed 2+ backbone heartbeats. Restarting..\n";
       Pushbullet::SendPushMessage("CRITICAL: WebSocket missed 2+ backbone heartbeats. Restarting..");
-      $this->gracefulRestart();
+      die();
     }
-  }
-
-  public function gracefulRestart() {
-    // Let all clients know that server is restarting
-    $RestartPayload = json_encode(array(
-      'action' => 'graceful_restart'
-    ));
-    foreach ($this->clients as $client) {
-      $client->send($RestartPayload);
-      $client->close();
-    }
-    die();
   }
 
   public function onPush($channel, $payload) {
