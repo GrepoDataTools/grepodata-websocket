@@ -23,10 +23,8 @@ class Server
     RedisClient::subscribe($loop, REDIS_BACKBONE_CHANNEL, array($oNotificationService, 'onPush'));
 
     # Create server
-    $WebSocketAdress = '0.0.0.0:'.WEBSOCKET_PORT;
-    echo "Listening on {$WebSocketAdress}\n";
     //$oWebSock = new SocketServer('[::]:'.WEBSOCKET_PORT, array(), $loop); // IPv6
-    $oWebSock = new SocketServer($WebSocketAdress, array(), $loop); // Binding to 0.0.0.0 means remotes can connect
+    $oWebSock = new SocketServer('0.0.0.0:'.WEBSOCKET_PORT, array(), $loop); // Binding to 0.0.0.0 means remotes can connect
 
     # Upgrade to SSL
     if (!bDevelopmentMode) {

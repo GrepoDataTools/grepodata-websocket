@@ -8,36 +8,42 @@ use React\EventLoop\LoopInterface;
 
 
 class Notification implements MessageComponentInterface {
+  protected $loop;
   protected $clients;
   protected $startup_time;
   protected $redis_heartbeat;
 
   public function __construct(LoopInterface $loop) {
     try {
+      $this->loop = $loop;
       $this->startup_time = time();
       $this->redis_heartbeat = time();
 
       $this->clients = new \SplObjectStorage;
 
       # Add periodic status check
-      $timer = $loop->addPeriodicTimer(5, [$this, 'checkStatus']);
+      $timer = $loop->addPeriodicTimer(30, [$this, 'checkStatus']);
 
-      echo "finished setup\n";
+      $this->log("WebSocket Server Online");
     } catch (\Exception $e) {
       Pushbullet::SendPushMessage("CRITICAL: WebSocket startup failure: ".$e->getMessage() . " [".$e->getTraceAsString()."]");
     }
   }
 
+  private function log($Message) {
+    $CurrentTime = date('Y-m-d H:i:s');
+    echo "[{$CurrentTime}] {$Message}\n";
+  }
+
   public function checkStatus() {
-    $CurrentTime = date('Y-m-d h:i:s');
     $NowUnix = time();
     $Uptime = $NowUnix - $this->startup_time;
     $NumConnections = count($this->clients);
     $TimeSinceHeartbeat = $NowUnix - $this->redis_heartbeat;
-    echo "[{$CurrentTime}] Uptime: {$Uptime}, Connections: {$NumConnections}, Time since heartbeat: {$TimeSinceHeartbeat}\n";
+    $this->log("Uptime: {$Uptime}, Connections: {$NumConnections}, Time since heartbeat: {$TimeSinceHeartbeat}");
 
     if (!bDevelopmentMode && $TimeSinceHeartbeat > (REDIS_BACKBONE_HEARTBEAT_INTERVAL * 2)+5) {
-      echo "Missed 2+ backbone heartbeats. Restarting..\n";
+      $this->log("Missed 2+ backbone heartbeats. Restarting..");
       Pushbullet::SendPushMessage("CRITICAL: WebSocket missed 2+ backbone heartbeats. Restarting..");
       die();
     }
@@ -46,7 +52,7 @@ class Notification implements MessageComponentInterface {
   public function onPush($channel, $payload) {
     if ($channel === REDIS_BACKBONE_CHANNEL) {
       // pubsub message received on backbone
-      echo "message received on backbone: " . $payload . "\n";
+      $this->log("message received on backbone: " . $payload);
 
       $aPayload = json_decode($payload, true);
 
@@ -73,11 +79,11 @@ class Notification implements MessageComponentInterface {
             }
             break;
           default:
-            echo "Unknown message type received on backbone: {$aPayload['type']}\n";
+            $this->log("Unknown message type received on backbone: {$aPayload['type']}");
         }
       }
     } else{
-      echo "Message received on illegal channel: ". $channel ."\n";
+      $this->log("Message received on illegal channel: ". $channel);
     }
   }
 
@@ -85,25 +91,25 @@ class Notification implements MessageComponentInterface {
     // Store the new connection to send messages to later
     $this->clients->attach($conn);
 
-    echo "New connection ({$conn->resourceId})\n";
+    $this->log("New connection ({$conn->resourceId})");
   }
 
   public function onMessage(ConnectionInterface $conn, $msg) {
     try {
       if (property_exists($conn, 'authenticated') && $conn->authenticated === true) {
-        echo "Client is already authenticated ({$conn->resourceId})\n";
+        $this->log("Client is already authenticated ({$conn->resourceId})");
         return;
       }
 
       $aData = json_decode($msg, true);
       if (key_exists('websocket_token', $aData)) {
-        echo "Attempting client authentication ({$conn->resourceId})\n";
+        $this->log("Attempting client authentication ({$conn->resourceId})");
 
         RedisClient::get($aData['websocket_token'], function ($payload) use ($conn) {
           if (empty($payload)) {
             // Unable to find wst
             // TODO: let client know auth was unsuccessful and let them retry
-            echo "Auth error: unknown wst ({$conn->resourceId})\n";
+            $this->log("Auth error: unknown wst ({$conn->resourceId})");
             $conn->close();
             return;
           }
@@ -113,7 +119,7 @@ class Notification implements MessageComponentInterface {
           if ($conn->remoteAddress != $aPayload['client']) {
             // Client mismatch, close connection
             // TODO: let client know auth was unsuccessful and let them retry
-            echo "Auth error: illegal client {$conn->remoteAddress} != {$aPayload['client']} ({$conn->resourceId})\n";
+            $this->log("Auth error: illegal client {$conn->remoteAddress} != {$aPayload['client']} ({$conn->resourceId})");
             $conn->close();
             return;
           }
@@ -122,14 +128,14 @@ class Notification implements MessageComponentInterface {
           $conn->authenticated = true;
           $conn->user_id = $aPayload['user_id'];
           $conn->teams = $aPayload['teams'];
-          echo "Successful authentication ({$conn->resourceId})\n";
+          $this->log("Successful authentication ({$conn->resourceId})");
         });
       } else {
         // Invalid message, close connection
         $conn->close();
       }
     } catch (\Exception $e) {
-      echo "Error authenticating client: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']';
+      $this->log("Error authenticating client: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']');
     }
   }
 
@@ -137,11 +143,11 @@ class Notification implements MessageComponentInterface {
     // The connection is closed, remove it, as we can no longer send it messages
     $this->clients->detach($conn);
 
-    echo "Connection {$conn->resourceId} has disconnected\n";
+    $this->log("Connection {$conn->resourceId} has disconnected");
   }
 
   public function onError(ConnectionInterface $conn, \Exception $e) {
-    echo "An error has occurred: {$e->getMessage()}\n";
+    $this->log("An error has occurred: {$e->getMessage()}");
 
     $conn->close();
   }
