@@ -1,0 +1,12 @@
+config:
+  target: "wss://grepodata.com:8443"
+  phases:
+    - duration: 100  # Test for 100 seconds
+      arrivalRate: 100 # Every second, add 100 users
+      rampTo: 100 # Keep it steady at 100 users per second for a total of 10000 peak users
+      name: "Ramping up the load"
+scenarios:
+  - engine: "ws"
+    flow:
+      - send: '{"websocket_token":"testtoken"}' # Authenticate via Redis (SET testtoken "{\"user_id\":1,\"client\":\"CLIENT_IP\",\"teams\":[\"team_key\"]}")
+      - think: 120 # Maintain each connection for 2 minutes

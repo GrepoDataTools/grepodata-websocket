@@ -11,12 +11,24 @@ We use a Redis PubSub architecture for communication between the REST backend an
 
 ## Deploy with supervisor
 
+### Install LibEv
+LibEv is needed to get around the default open file limit of 1024.
+- `sudo apt install php-dev` (Needed to run PHPIZE in the next step)
+- `sudo pecl install ev`
+- `echo 'extension=ev.so' > /etc/php/7.0/mods-available/ev.ini`
+- `sudo phpenmod ev`
+
+If the install was successful, the event loop should now be of type `React\EventLoop\ExtEvLoop`
+
+### Setup Supervisor
 - Install supervisor: `sudo apt-get install supervisor`
 - Override main supervisor conf: `sudo cp supervisor/supervisord.conf /etc/supervisor/supervisord.conf`
 - Register websocket server as supervisor program: `sudo cp supervisor/ratchet.conf /etc/supervisor/conf.d/ratchet.conf`
 - Enable as systemd service: `sudo systemctl enable supervisor`
 - Start service: `sudo systemctl start supervisor`
-- Reread conf.d/* files: `sudo supervisorctl reread`
+
+### Operational commands
+- Reread updated config files: `sudo supervisorctl reread`
 - Apply updates to conf: `sudo supervisorctl update`
 - Check program status: `sudo supervisorctl status`
 - Restart the websocket server: `sudo supervisorctl restart ratchet:Ratchet`

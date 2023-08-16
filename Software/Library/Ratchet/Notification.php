@@ -12,6 +12,7 @@ class Notification implements MessageComponentInterface {
   protected $clients;
   protected $startup_time;
   protected $redis_heartbeat;
+  protected $verbose = false;
 
   public function __construct(LoopInterface $loop) {
     try {
@@ -22,7 +23,7 @@ class Notification implements MessageComponentInterface {
       $this->clients = new \SplObjectStorage;
 
       # Add periodic status check
-      $timer = $loop->addPeriodicTimer(30, [$this, 'checkStatus']);
+      $timer = $loop->addPeriodicTimer(15, [$this, 'checkStatus']);
 
       $this->log("WebSocket Server Online");
     } catch (\Exception $e) {
@@ -40,6 +41,13 @@ class Notification implements MessageComponentInterface {
     $Uptime = $NowUnix - $this->startup_time;
     $NumConnections = count($this->clients);
     $TimeSinceHeartbeat = $NowUnix - $this->redis_heartbeat;
+    if ($Uptime > 3600*24) {
+      $Uptime = floor($Uptime/(3600*24)) . ' days';
+    } elseif ($Uptime > 3600) {
+      $Uptime = floor($Uptime/3600) . ' hours';
+    } else {
+      $Uptime = $Uptime . ' seconds';
+    }
     $this->log("Uptime: {$Uptime}, Connections: {$NumConnections}, Time since heartbeat: {$TimeSinceHeartbeat}");
 
     if (!bDevelopmentMode && $TimeSinceHeartbeat > (REDIS_BACKBONE_HEARTBEAT_INTERVAL * 2)+5) {
@@ -91,7 +99,7 @@ class Notification implements MessageComponentInterface {
     // Store the new connection to send messages to later
     $this->clients->attach($conn);
 
-    $this->log("New connection ({$conn->resourceId})");
+    !$this->verbose ?? $this->log("New connection ({$conn->resourceId})");
   }
 
   public function onMessage(ConnectionInterface $conn, $msg) {
@@ -103,7 +111,7 @@ class Notification implements MessageComponentInterface {
 
       $aData = json_decode($msg, true);
       if (key_exists('websocket_token', $aData)) {
-        $this->log("Attempting client authentication ({$conn->resourceId})");
+        !$this->verbose ?? $this->log("Attempting client authentication ({$conn->resourceId})");
 
         RedisClient::get($aData['websocket_token'], function ($payload) use ($conn) {
           if (empty($payload)) {
@@ -128,7 +136,7 @@ class Notification implements MessageComponentInterface {
           $conn->authenticated = true;
           $conn->user_id = $aPayload['user_id'];
           $conn->teams = $aPayload['teams'];
-          $this->log("Successful authentication ({$conn->resourceId})");
+          !$this->verbose ?? $this->log("Successful authentication ({$conn->resourceId})");
         });
       } else {
         // Invalid message, close connection
@@ -143,7 +151,7 @@ class Notification implements MessageComponentInterface {
     // The connection is closed, remove it, as we can no longer send it messages
     $this->clients->detach($conn);
 
-    $this->log("Connection {$conn->resourceId} has disconnected");
+    !$this->verbose ?? $this->log("Connection {$conn->resourceId} has disconnected");
   }
 
   public function onError(ConnectionInterface $conn, \Exception $e) {

@@ -11,4 +11,6 @@ $loop  = Loop::get();
 
 $server = Server::setup($loop);
 
+echo "Using event loop type: " . get_class($server->loop) . PHP_EOL;
+
 $server->run();
