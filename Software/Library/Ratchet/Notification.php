@@ -33,12 +33,10 @@ class Notification implements MessageComponentInterface {
     }
   }
 
-  private function log($Message) {
-    $CurrentTime = date('Y-m-d H:i:s');
-    echo "[{$CurrentTime}] {$Message}\n";
-  }
-
-  public function checkStatus() {
+  /**
+   * Check self status and monitor backbone health. This function is called at a periodic interval.
+   */
+  private function checkStatus() {
     $NowUnix = time();
     $Uptime = $NowUnix - $this->startup_time;
     $NumConnections = count($this->clients);
@@ -59,6 +57,11 @@ class Notification implements MessageComponentInterface {
     }
   }
 
+  /**
+   * Handles push messages from the backend received via the Redis PubSub backbone.
+   * @param $channel
+   * @param $payload
+   */
   public function onPush($channel, $payload) {
     try {
       if ($channel === REDIS_BACKBONE_CHANNEL) {
@@ -108,13 +111,13 @@ class Notification implements MessageComponentInterface {
     }
   }
 
-  public function onOpen(ConnectionInterface $conn) {
-    // Store the new connection to send messages to later
-    $this->clients->attach($conn);
-
-    !$this->verbose ?? $this->log("New connection ({$conn->resourceId})");
-  }
-
+  /**
+   * Handles messages received from connected clients.
+   * Used exclusively by clients to send authentication requests to upgrade their connection.
+   * If authentication is successful, the client is subscribed to all relevant topics
+   * @param ConnectionInterface $conn
+   * @param string $msg
+   */
   public function onMessage(ConnectionInterface $conn, $msg) {
     try {
       if (property_exists($conn, 'authenticated') && $conn->authenticated === true) {
@@ -164,6 +167,21 @@ class Notification implements MessageComponentInterface {
     }
   }
 
+  /**
+   * Called when a new WebSocket connection is initiated
+   * @param ConnectionInterface $conn
+   */
+  public function onOpen(ConnectionInterface $conn) {
+    // Store the new connection to send messages to later
+    $this->clients->attach($conn);
+
+    !$this->verbose ?? $this->log("New connection ({$conn->resourceId})");
+  }
+
+  /**
+   * Called when a WebSocket connection is closed
+   * @param ConnectionInterface $conn
+   */
   public function onClose(ConnectionInterface $conn) {
     // The connection is closed, remove it, as we can no longer send it messages
     $this->clients->detach($conn);
@@ -174,12 +192,23 @@ class Notification implements MessageComponentInterface {
     !$this->verbose ?? $this->log("Connection {$conn->resourceId} has disconnected");
   }
 
+  /**
+   * Called when a WebSocket connection raises an Exception
+   * @param ConnectionInterface $conn
+   * @param \Exception $e
+   */
   public function onError(ConnectionInterface $conn, \Exception $e) {
     $this->log("An error has occurred: {$e->getMessage()}");
 
     $conn->close();
   }
 
+  /**
+   * Helper function to send a payload to a client
+   * @param $client
+   * @param $payload
+   * @return bool
+   */
   private function _send($client, $payload)
   {
     try {
@@ -191,6 +220,10 @@ class Notification implements MessageComponentInterface {
     return false;
   }
 
+  /**
+   * Attaches the client to all relevant user/team topics
+   * @param $client
+   */
   private function _subscribe_client($client)
   {
     // Add client to user_id subscription
@@ -218,6 +251,10 @@ class Notification implements MessageComponentInterface {
     }
   }
 
+  /**
+   * Detaches the client from all relevant user/team topics
+   * @param $client
+   */
   private function _unsubscribe_client($client)
   {
     // detach client from user_id
@@ -238,4 +275,14 @@ class Notification implements MessageComponentInterface {
       $this->log("Error unsubscribing client from teams: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']');
     }
   }
+
+  /**
+   * Helper function for internal log messages
+   * @param $Message
+   */
+  private function log($Message) {
+    $CurrentTime = date('Y-m-d H:i:s');
+    echo "[{$CurrentTime}] {$Message}\n";
+  }
+
 }
