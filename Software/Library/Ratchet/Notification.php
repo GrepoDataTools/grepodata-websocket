@@ -21,6 +21,8 @@ class Notification implements MessageComponentInterface {
       $this->redis_heartbeat = time();
 
       $this->clients = new \SplObjectStorage;
+      $this->teams = array();
+      $this->users = array();
 
       # Add periodic status check
       $timer = $loop->addPeriodicTimer(15, [$this, 'checkStatus']);
@@ -58,40 +60,51 @@ class Notification implements MessageComponentInterface {
   }
 
   public function onPush($channel, $payload) {
-    if ($channel === REDIS_BACKBONE_CHANNEL) {
-      // pubsub message received on backbone
-      $this->log("message received on backbone: " . $payload);
+    try {
+      if ($channel === REDIS_BACKBONE_CHANNEL) {
+        // pubsub message received on backbone
+        $aPayload = json_decode($payload, true);
+        $num_receivers = 0;
 
-      $aPayload = json_decode($payload, true);
-
-      if (key_exists('type', $aPayload)) {
-        switch ($aPayload['type']) {
-          case 'redis_heartbeat':
-            // Update redis_heartbeat; backbone listener is still alive!
-            $this->redis_heartbeat = time();
-            break;
-          case 'notify_user':
-            // Send a notification to a specific user
-            foreach ($this->clients as $client) {
-              if (!empty($client->user_id) && $aPayload['user_id'] === $client->user_id) {
-                $client->send($payload);
+        if (key_exists('type', $aPayload)) {
+          switch ($aPayload['type']) {
+            case 'redis_heartbeat':
+              // Update redis_heartbeat; backbone listener is still alive!
+              $this->redis_heartbeat = time();
+              break;
+            case 'notify_user':
+              // Send a notification to a specific user
+              if (key_exists($aPayload['user_id'], $this->users)) {
+                foreach ($this->users[$aPayload['user_id']] as $client) {
+                  $sent = $this->_send($client, $payload);
+                  if ($sent) {
+                    $num_receivers++;
+                  }
+                }
               }
-            }
-            break;
-          case 'notify_team':
-            // Send a notification to everybody that is subscribed to the team
-            foreach ($this->clients as $client) {
-              if (!empty($client->teams) && in_array($aPayload['team'], $client->teams)) {
-                $client->send($payload);
+              break;
+            case 'notify_team':
+              // Send a notification to everybody that is subscribed to the team
+              if (key_exists($aPayload['team'], $this->teams)) {
+                foreach ($this->teams[$aPayload['team']] as $client) {
+                  $sent = $this->_send($client, $payload);
+                  if ($sent) {
+                    $num_receivers++;
+                  }
+                }
               }
-            }
-            break;
-          default:
-            $this->log("Unknown message type received on backbone: {$aPayload['type']}");
+              break;
+            default:
+              $this->log("Unknown message type received on backbone: {$aPayload['type']}");
+          }
         }
+
+        $this->log("Message received on backbone. Receivers: " . $num_receivers . ", Payload: " . $payload);
+      } else{
+        $this->log("Message received on illegal channel: ". $channel);
       }
-    } else{
-      $this->log("Message received on illegal channel: ". $channel);
+    } catch (\Exception $e) {
+      $this->log("Error pushing backbone message: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']');
     }
   }
 
@@ -136,6 +149,10 @@ class Notification implements MessageComponentInterface {
           $conn->authenticated = true;
           $conn->user_id = $aPayload['user_id'];
           $conn->teams = $aPayload['teams'];
+
+          // Subscribe to user & teams
+          $this->_subscribe_client($conn);
+
           !$this->verbose ?? $this->log("Successful authentication ({$conn->resourceId})");
         });
       } else {
@@ -151,6 +168,9 @@ class Notification implements MessageComponentInterface {
     // The connection is closed, remove it, as we can no longer send it messages
     $this->clients->detach($conn);
 
+    // Unsubscribe from user & teams
+    $this->_unsubscribe_client($conn);
+
     !$this->verbose ?? $this->log("Connection {$conn->resourceId} has disconnected");
   }
 
@@ -158,5 +178,64 @@ class Notification implements MessageComponentInterface {
     $this->log("An error has occurred: {$e->getMessage()}");
 
     $conn->close();
+  }
+
+  private function _send($client, $payload)
+  {
+    try {
+      $client->send($payload);
+      return true;
+    } catch (\Exception $e) {
+      $this->log("Error sending payload to client: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']');
+    }
+    return false;
+  }
+
+  private function _subscribe_client($client)
+  {
+    // Add client to user_id subscription
+    $user_id = $client->user_id;
+    try {
+      if (!key_exists($user_id, $this->users)) {
+        $this->users[$user_id] = new \SplObjectStorage;
+      }
+      $this->users[$user_id]->attach($client);
+    } catch (\Exception $e) {
+      $this->log("Error subscribing client to user_id: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']');
+    }
+
+    // Add client to teams subscription
+    $teams = $client->teams;
+    try {
+      foreach ($teams as $team) {
+        if (!key_exists($team, $this->teams)) {
+          $this->teams[$team] = new \SplObjectStorage;
+        }
+        $this->teams[$team]->attach($client);
+      }
+    } catch (\Exception $e) {
+      $this->log("Error subscribing client to teams: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']');
+    }
+  }
+
+  private function _unsubscribe_client($client)
+  {
+    // detach client from user_id
+    $user_id = $client->user_id;
+    try {
+      $this->users[$user_id]->detach($client);
+    } catch (\Exception $e) {
+      $this->log("Error unsubscribing client from user_id: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']');
+    }
+
+    // detach client from teams
+    $teams = $client->teams;
+    try {
+      foreach ($teams as $team) {
+        $this->teams[$team]->detach($client);
+      }
+    } catch (\Exception $e) {
+      $this->log("Error unsubscribing client from teams: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']');
+    }
   }
 }

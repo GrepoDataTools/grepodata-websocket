@@ -15,7 +15,7 @@ We use a Redis PubSub architecture for communication between the REST backend an
 LibEv is needed to get around the default open file limit of 1024.
 - `sudo apt install php-dev` (Needed to run PHPIZE in the next step)
 - `sudo pecl install ev`
-- `echo 'extension=ev.so' > /etc/php/7.0/mods-available/ev.ini`
+- `echo 'extension=ev.so' > /etc/php/7.2/mods-available/ev.ini`
 - `sudo phpenmod ev`
 
 If the install was successful, the event loop should now be of type `React\EventLoop\ExtEvLoop`
