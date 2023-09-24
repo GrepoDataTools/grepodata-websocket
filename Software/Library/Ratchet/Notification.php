@@ -260,7 +260,9 @@ class Notification implements MessageComponentInterface {
     // detach client from user_id
     $user_id = $client->user_id;
     try {
-      $this->users[$user_id]->detach($client);
+      if (key_exists($user_id, $this->users) && !is_null($this->users[$user_id])) {
+        $this->users[$user_id]->detach($client);
+      }
     } catch (\Exception $e) {
       $this->log("Error unsubscribing client from user_id: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']');
     }
@@ -269,7 +271,9 @@ class Notification implements MessageComponentInterface {
     $teams = $client->teams;
     try {
       foreach ($teams as $team) {
-        $this->teams[$team]->detach($client);
+        if (key_exists($team, $this->teams) && !is_null($this->teams[$team])) {
+          $this->teams[$team]->detach($client);
+        }
       }
     } catch (\Exception $e) {
       $this->log("Error unsubscribing client from teams: " . $e->getMessage() . ' [' . $e->getTraceAsString() . ']');
