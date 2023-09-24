@@ -36,7 +36,7 @@ class Notification implements MessageComponentInterface {
   /**
    * Check self status and monitor backbone health. This function is called at a periodic interval.
    */
-  private function checkStatus() {
+  public function checkStatus() {
     $NowUnix = time();
     $Uptime = $NowUnix - $this->startup_time;
     $NumConnections = count($this->clients);
