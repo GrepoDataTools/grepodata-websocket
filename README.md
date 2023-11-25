@@ -32,3 +32,7 @@ If the install was successful, the event loop should now be of type `React\Event
 - Apply updates to conf: `sudo supervisorctl update`
 - Check program status: `sudo supervisorctl status`
 - Restart the websocket server: `sudo supervisorctl restart ratchet:Ratchet`
+
+### Scheduled Restart
+The ReactPHP server is a bit unstable. A small amount of connections is never properly closed, leading to an accumulation of ghost connections.
+For this reason, we restart the server every other night using the following crontab: `11 02 */2 * * /usr/bin/supervisorctl restart ratchet:Ratchet`

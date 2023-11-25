@@ -39,7 +39,7 @@ class Notification implements MessageComponentInterface {
   public function checkStatus() {
     $NowUnix = time();
     $Uptime = $NowUnix - $this->startup_time;
-    $NumConnections = count($this->clients);
+    $NumConnections = $this->clients->count();
     $TimeSinceHeartbeat = $NowUnix - $this->redis_heartbeat;
     if ($Uptime > 3600*24) {
       $Uptime = floor($Uptime/(3600*24)) . ' days';
@@ -132,7 +132,6 @@ class Notification implements MessageComponentInterface {
         RedisClient::get($aData['websocket_token'], function ($payload) use ($conn) {
           if (empty($payload)) {
             // Unable to find wst
-            // TODO: let client know auth was unsuccessful and let them retry
             $this->log("Auth error: unknown wst ({$conn->resourceId})");
             $conn->close();
             return;
@@ -142,7 +141,6 @@ class Notification implements MessageComponentInterface {
 
           if ($conn->remoteAddress != $aPayload['client']) {
             // Client mismatch, close connection
-            // TODO: let client know auth was unsuccessful and let them retry
             $this->log("Auth error: illegal client {$conn->remoteAddress} != {$aPayload['client']} ({$conn->resourceId})");
             $conn->close();
             return;
@@ -268,11 +266,12 @@ class Notification implements MessageComponentInterface {
     }
 
     // detach client from teams
-    $teams = $client->teams;
     try {
-      foreach ($teams as $team) {
-        if (key_exists($team, $this->teams) && !is_null($this->teams[$team])) {
-          $this->teams[$team]->detach($client);
+      if (is_array($client->teams)) {
+        foreach ($client->teams as $team) {
+          if (key_exists($team, $this->teams) && !is_null($this->teams[$team])) {
+            $this->teams[$team]->detach($client);
+          }
         }
       }
     } catch (\Exception $e) {
